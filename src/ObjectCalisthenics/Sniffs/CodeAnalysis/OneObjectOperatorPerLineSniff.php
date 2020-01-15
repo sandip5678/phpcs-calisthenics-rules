@@ -15,29 +15,17 @@ final class OneObjectOperatorPerLineSniff implements Sniff
     /**
      * @var string[]
      */
-    public $variablesHoldingAFluentInterface = [
-        '$queryBuilder',
-        '$containerBuilder',
-    ];
+    public $variablesHoldingAFluentInterface = ['$queryBuilder', '$containerBuilder'];
 
     /**
      * @var string[]
      */
-    public $methodsStartingAFluentInterface = [
-        'createQueryBuilder'
-    ];
+    public $methodsStartingAFluentInterface = ['createQueryBuilder'];
 
     /**
      * @var string[]
      */
-    public $methodsEndingAFluentInterface = [
-        'execute', 'getQuery'
-    ];
-
-    /**
-     * @var File
-     */
-    private $file;
+    public $methodsEndingAFluentInterface = ['execute', 'getQuery'];
 
     /**
      * @var int
@@ -45,19 +33,24 @@ final class OneObjectOperatorPerLineSniff implements Sniff
     private $position;
 
     /**
-     * @var array
+     * @var string
      */
-    private $callerTokens;
+    private $variableName;
 
     /**
      * @var mixed[]
      */
-    private $tokens;
+    private $callerTokens = [];
 
     /**
-     * @var string
+     * @var mixed[]
      */
-    private $variableName;
+    private $tokens = [];
+
+    /**
+     * @var File
+     */
+    private $file;
 
     /**
      * @return int[]
@@ -68,7 +61,6 @@ final class OneObjectOperatorPerLineSniff implements Sniff
     }
 
     /**
-     * @param File $file
      * @param int $position
      */
     public function process(File $file, $position): void
@@ -99,64 +91,6 @@ final class OneObjectOperatorPerLineSniff implements Sniff
         return $pointer;
     }
 
-    private function handleTwoObjectOperators(bool $isOwnCall): void
-    {
-        if ($this->callerTokens && ! $isOwnCall && ! $this->isInFluentInterfaceMode()) {
-            $this->file->addError(self::ERROR_MESSAGE, $this->position, self::class);
-        }
-    }
-
-    private function handleExcludedFluentInterfaces(array $tmpToken, string $tmpTokenType, bool $isOwnCall): void
-    {
-        if ((count($this->callerTokens) - (int) $isOwnCall) === 0) {
-            return;
-        }
-
-        $memberTokenCount = count($this->callerTokens);
-        $memberToken = end($this->callerTokens);
-        $memberTokenType = $memberToken['type'];
-
-        if (($memberTokenType === 'property' && $tmpTokenType === 'property')
-            || ($memberTokenType === 'method' && $tmpTokenType === 'property')
-            || ($memberTokenType === 'method' && $tmpTokenType === 'method'
-            && $memberTokenCount > 1 && $memberToken['token']['content'] !== $tmpToken['content']
-            && ! $this->isInFluentInterfaceMode())
-        ) {
-            $this->file->addError(self::ERROR_MESSAGE, $this->position, self::class);
-        }
-    }
-
-    private function isInFluentInterfaceMode(): bool
-    {
-        $lastEndPoint = $this->computeLastCallOfAnyFrom($this->methodsEndingAFluentInterface);
-        $lastStartPoint = $this->computeLastCallOfAnyFrom($this->methodsStartingAFluentInterface);
-
-        if (in_array($this->variableName, $this->variablesHoldingAFluentInterface)) {
-            $lastStartPoint = max($lastStartPoint, -1);
-        }
-
-        return $lastStartPoint > -2
-            && $lastStartPoint > $lastEndPoint;
-    }
-
-    /**
-     * @param mixed[] $methods
-     *
-     * @return int The last position of the method calls within the callerTokens
-     *             or -2 if none of the methods has been called
-     */
-    private function computeLastCallOfAnyFrom(array $methods): int
-    {
-        $calls = array_filter($this->callerTokens, function (array $token) use ($methods) {
-            return in_array($token['token']['content'], $methods);
-        });
-        if (count($calls) > 0) {
-            return array_search(end($calls), $this->callerTokens);
-        }
-
-        return -2;
-    }
-
     private function handleObjectOperators(int $pointer, bool $isOwnCall): void
     {
         while ($this->tokens[$pointer]['code'] === T_OBJECT_OPERATOR) {
@@ -177,6 +111,9 @@ final class OneObjectOperatorPerLineSniff implements Sniff
         }
     }
 
+    /**
+     * @param mixed[] $token
+     */
     private function getTokenType(array $token): string
     {
         if ($token['code'] === T_OPEN_PARENTHESIS) {
@@ -184,6 +121,38 @@ final class OneObjectOperatorPerLineSniff implements Sniff
         }
 
         return 'property';
+    }
+
+    private function handleTwoObjectOperators(bool $isOwnCall): void
+    {
+        if ($this->callerTokens && ! $isOwnCall && ! $this->isInFluentInterfaceMode()) {
+            $this->file->addError(self::ERROR_MESSAGE, $this->position, self::class);
+        }
+    }
+
+    /**
+     * @param mixed[] $tmpToken
+     */
+    private function handleExcludedFluentInterfaces(array $tmpToken, string $tmpTokenType, bool $isOwnCall): void
+    {
+        if ((count($this->callerTokens) - (int) $isOwnCall) === 0) {
+            return;
+        }
+
+        $memberTokenCount = count($this->callerTokens);
+        $memberToken = end($this->callerTokens);
+        if ($memberToken === false) {
+            return;
+        }
+
+        if (($memberToken['type'] === 'property' && $tmpTokenType === 'property')
+            || ($memberToken['type'] === 'method' && $tmpTokenType === 'property')
+            || ($memberToken['type'] === 'method' && $tmpTokenType === 'method'
+            && $memberTokenCount > 1 && $tmpToken['content'] !== $memberToken['token']['content']
+            && ! $this->isInFluentInterfaceMode())
+        ) {
+            $this->file->addError(self::ERROR_MESSAGE, $this->position, self::class);
+        }
     }
 
     private function movePointerToNextObject(int $pointer): int
@@ -196,5 +165,36 @@ final class OneObjectOperatorPerLineSniff implements Sniff
         }
 
         return $this->ignoreWhitespace($pointer);
+    }
+
+    private function isInFluentInterfaceMode(): bool
+    {
+        $lastEndPoint = $this->computeLastCallOfAnyFrom($this->methodsEndingAFluentInterface);
+        $lastStartPoint = $this->computeLastCallOfAnyFrom($this->methodsStartingAFluentInterface);
+
+        if (in_array($this->variableName, $this->variablesHoldingAFluentInterface, true)) {
+            $lastStartPoint = max($lastStartPoint, -1);
+        }
+
+        return $lastStartPoint > -2
+            && $lastStartPoint > $lastEndPoint;
+    }
+
+    /**
+     * @param string[] $methods
+     *
+     * @return int The last position of the method calls within the callerTokens
+     *             or -2 if none of the methods has been called
+     */
+    private function computeLastCallOfAnyFrom(array $methods): int
+    {
+        $calls = array_filter($this->callerTokens, function (array $token) use ($methods): bool {
+            return in_array($token['token']['content'], $methods, true);
+        });
+        if (count($calls) > 0) {
+            return (int) array_search(end($calls), $this->callerTokens, true);
+        }
+
+        return -2;
     }
 }

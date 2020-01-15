@@ -24,7 +24,6 @@ final class ForbiddenPublicPropertySniff implements Sniff
     }
 
     /**
-     * @param File $file
      * @param int $position
      */
     public function process(File $file, $position): void
@@ -50,11 +49,8 @@ final class ForbiddenPublicPropertySniff implements Sniff
         $classNameTokenPosition = $file->findNext(T_STRING, $classTokenPosition);
 
         $classNameToken = $file->getTokens()[$classNameTokenPosition];
-        if (Strings::endsWith($classNameToken['content'], 'Sniff')) {
-            return true;
-        }
 
-        return false;
+        return Strings::endsWith($classNameToken['content'], 'Sniff');
     }
 
     /**

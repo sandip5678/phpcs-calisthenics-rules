@@ -18,11 +18,6 @@ final class MaxNestingLevelSniff implements Sniff
     public $maxNestingLevel = 2;
 
     /**
-     * @var File
-     */
-    private $file;
-
-    /**
      * @var int
      */
     private $position;
@@ -33,17 +28,22 @@ final class MaxNestingLevelSniff implements Sniff
     private $nestingLevel;
 
     /**
-     * @var array
-     */
-    private $ignoredScopeStack = [];
-
-    /**
      * @var int
      */
     private $currentPtr;
 
     /**
-     * @return int[]
+     * @var mixed[]
+     */
+    private $ignoredScopeStack = [];
+
+    /**
+     * @var File
+     */
+    private $file;
+
+    /**
+     * @return int[]|string[]
      */
     public function register(): array
     {
@@ -51,8 +51,7 @@ final class MaxNestingLevelSniff implements Sniff
     }
 
     /**
-     * @param File $file
-     * @param int  $position
+     * @param int $position
      */
     public function process(File $file, $position): void
     {
@@ -65,7 +64,7 @@ final class MaxNestingLevelSniff implements Sniff
         $token = $tokens[$position];
 
         // Ignore abstract methods.
-        if (isset($token['scope_opener']) === false) {
+        if (! isset($token['scope_opener'])) {
             return;
         }
 
@@ -75,26 +74,11 @@ final class MaxNestingLevelSniff implements Sniff
         $this->handleNestingLevel($this->nestingLevel);
     }
 
-    private function handleNestingLevel(int $nestingLevel): void
-    {
-        if ($nestingLevel > $this->maxNestingLevel) {
-            $levelPluralization = $this->maxNestingLevel > 1 ? 's' : '';
-
-            $error = sprintf(
-                self::ERROR_MESSAGE,
-                $this->maxNestingLevel,
-                $levelPluralization,
-                $nestingLevel
-            );
-
-            $this->file->addError($error, $this->position, self::class);
-        }
-    }
-
+    /**
+     * @param mixed[] $tokens
+     */
     private function iterateTokens(int $start, int $end, array $tokens): void
     {
-        $this->currentPtr = $start + 1;
-
         // Find the maximum nesting level of any token in the function.
         for ($this->currentPtr = ($start + 1); $this->currentPtr < $end; ++$this->currentPtr) {
             $nestedToken = $tokens[$this->currentPtr];
@@ -103,6 +87,28 @@ final class MaxNestingLevelSniff implements Sniff
         }
     }
 
+    /**
+     * @param mixed[] $token
+     */
+    private function subtractFunctionNestingLevel(array $token): int
+    {
+        return $this->nestingLevel - $token['level'] - 1;
+    }
+
+    private function handleNestingLevel(int $nestingLevel): void
+    {
+        if ($nestingLevel > $this->maxNestingLevel) {
+            $levelPluralization = $this->maxNestingLevel > 1 ? 's' : '';
+
+            $error = sprintf(self::ERROR_MESSAGE, $this->maxNestingLevel, $levelPluralization, $nestingLevel);
+
+            $this->file->addError($error, $this->position, self::class);
+        }
+    }
+
+    /**
+     * @param mixed[] $nestedToken
+     */
     private function handleToken(array $nestedToken): void
     {
         $this->handleClosureToken($nestedToken);
@@ -118,11 +124,9 @@ final class MaxNestingLevelSniff implements Sniff
         }
     }
 
-    private function subtractFunctionNestingLevel(array $token): int
-    {
-        return $this->nestingLevel - $token['level'] - 1;
-    }
-
+    /**
+     * @param mixed[] $nestedToken
+     */
     private function handleClosureToken(array $nestedToken): void
     {
         if ($nestedToken['code'] === T_CLOSURE) {
@@ -134,10 +138,13 @@ final class MaxNestingLevelSniff implements Sniff
         }
     }
 
+    /**
+     * @param mixed[] $nestedToken
+     */
     private function handleCaseToken(array $nestedToken): void
     {
-        if (in_array($nestedToken['code'], [T_CASE, T_DEFAULT])) {
-            array_push($this->ignoredScopeStack, $nestedToken);
+        if (in_array($nestedToken['code'], [T_CASE, T_DEFAULT], true)) {
+            $this->ignoredScopeStack[] = $nestedToken;
 
             return;
         }
@@ -152,6 +159,9 @@ final class MaxNestingLevelSniff implements Sniff
         }
     }
 
+    /**
+     * @param mixed[] $ignoredScope
+     */
     private function unsetScopeIfNotCurrent(int $key, array $ignoredScope): void
     {
         if ($ignoredScope['scope_closer'] !== $this->currentPtr) {
